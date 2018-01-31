@@ -80,7 +80,7 @@ int main(int argc, char ** argv)
     fprintf(stderr, "function unexpectedly not 'main'\n");
     return 5;
   }
-  if (g_last_log_event.location->line_number != 65u) {
+  if (g_last_log_event.location->line_number != 69u) {
     fprintf(stderr, "unexpected line number %zu\n", g_last_log_event.location->line_number);
     return 6;
   }
@@ -110,7 +110,7 @@ int main(int argc, char ** argv)
     fprintf(stderr, "function unexpectedly not 'main'\n");
     return 12;
   }
-  if (g_last_log_event.location->line_number != 88u) {
+  if (g_last_log_event.location->line_number != 99u) {
     fprintf(stderr, "unexpected line number %zu\n", g_last_log_event.location->line_number);
     return 13;
   }
