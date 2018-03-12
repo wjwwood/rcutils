@@ -135,9 +135,11 @@ TEST(CLASSNAME(TestLogging, RMW_IMPLEMENTATION), test_logger_severities) {
   ASSERT_EQ(
     RCUTILS_LOG_SEVERITY_WARN,
     rcutils_logging_get_logger_level("rcutils_test_loggers"));
+  rcutils_reset_error();
   ASSERT_EQ(
     RCUTILS_LOG_SEVERITY_WARN,
     rcutils_logging_get_logger_effective_level("rcutils_test_loggers"));
+  rcutils_reset_error();
   ASSERT_EQ(
     RCUTILS_RET_OK,
     rcutils_logging_set_logger_level(
@@ -165,12 +167,15 @@ TEST(CLASSNAME(TestLogging, RMW_IMPLEMENTATION), test_logger_severities) {
   ASSERT_EQ(
     RCUTILS_RET_INVALID_ARGUMENT,
     rcutils_logging_set_logger_level("rcutils_test_loggers", -1));
+  rcutils_reset_error();
   ASSERT_EQ(
     RCUTILS_RET_INVALID_ARGUMENT,
     rcutils_logging_set_logger_level("rcutils_test_loggers", 51));
+  rcutils_reset_error();
   ASSERT_EQ(
     RCUTILS_RET_INVALID_ARGUMENT,
     rcutils_logging_set_logger_level("rcutils_test_loggers", 1000));
+  rcutils_reset_error();
 }
 
 TEST(CLASSNAME(TestLogging, RMW_IMPLEMENTATION), test_logger_severity_hierarchy) {
