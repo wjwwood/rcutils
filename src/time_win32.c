@@ -25,7 +25,7 @@ extern "C"
 
 #include <windows.h>
 
-#include "./common.h"
+#include "./time_common.h"
 #include "rcutils/allocator.h"
 #include "rcutils/error_handling.h"
 
@@ -42,20 +42,15 @@ rcutils_system_time_now(rcutils_time_point_value_t * now)
   // Adjust for January 1st, 1970, see:
   //   https://support.microsoft.com/en-us/kb/167296
   li.QuadPart -= 116444736000000000LL;
-  // Convert to nanoseconds from 100's of nanoseconds.
-  // Might overflow!
-  rcutils_ret_t retval;
+  // Check for overflow in next step.
   if (li.QuadPart > INT64_MAX / 100LL) {
     RCUTILS_SET_ERROR_MSG("system time overflow", rcutils_get_default_allocator());
-    retval = RCUTILS_RET_ERROR;
-  } else {
-    *now = li.QuadPart * 100LL;
-    retval = RCUTILS_RET_OK;
+    return RCUTILS_CALCULATION_OVERFLOW;
   }
-  return retval;
+  // Convert to nanoseconds from 100's of nanoseconds.
+  *now = li.QuadPart * 100LL;
+  return RCUTILS_RET_OK;
 }
-
-static __declspec(thread) rcutils_time_point_value_t last_steady_sample = INT64_MIN;
 
 rcutils_ret_t
 rcutils_steady_time_now(rcutils_time_point_value_t * now)
@@ -78,36 +73,46 @@ rcutils_steady_time_now(rcutils_time_point_value_t * now)
   const rcutils_time_point_value_t remainder_count =
     performance_count.QuadPart % cpu_frequency.QuadPart;
 
-  // Might overflow!
+  // This calculation could overflow, but is checked below.
   const rcutils_time_point_value_t remainder_ns =
     RCUTILS_S_TO_NS(remainder_count) / cpu_frequency.QuadPart;
-  bool overflow_happened = remainder_count > (INT64_MAX / 1000000000LL);
 
-  // Might overflow!
-  const rcutils_time_point_value_t total_seconds_in_ns =
-    RCUTILS_S_TO_NS(whole_seconds);
-  overflow_happened = overflow_happened || (whole_seconds > (INT64_MAX / 1000000000LL));
+  // This calculation could overflow, but is checked below.
+  const rcutils_time_point_value_t total_seconds_in_ns = RCUTILS_S_TO_NS(whole_seconds);
 
-  // Might overflow!
+  // This calculation could overflow, but is checked below.
   const rcutils_time_point_value_t total_ns = total_seconds_in_ns + remainder_ns;
-  overflow_happened = overflow_happened || ((remainder_ns > 0LL) &&
-    (total_seconds_in_ns > (INT64_MAX - remainder_ns)));
 
-  bool non_monotonic = last_steady_sample > total_ns;
-  last_steady_sample = total_ns;
+#if !defined(RCUTILS_DISABLE_TIME_SANITY_CHECKS) || !RCUTILS_DISABLE_TIME_SANITY_CHECKS
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+  // Check for overflows...
 
-  rcutils_ret_t retval;
-  if (overflow_happened) {
-    RCUTILS_SET_ERROR_MSG("steady time overflow", rcutils_get_default_allocator());
-    retval = RCUTILS_RET_ERROR;
-  } else if (non_monotonic) {
-    RCUTILS_SET_ERROR_MSG("non-monotonic steady time", rcutils_get_default_allocator());
-    retval = RCUTILS_RET_ERROR;
-  } else {
-    *now = total_ns;
-    retval = RCUTILS_RET_OK;
+  // Overflow of remainder_count when converting to nanoseconds from seconds.
+  if (remainder_count > (INT64_MAX / 1000000000LL)) {
+    RCUTILS_SET_ERROR_MSG("overflow in steady time for 'remainder_count'", allocator)
+    return RCUTILS_CALCULATION_OVERFLOW;
   }
-  return retval;
+  // Overflow of whole_seconds when converting to nanoseconds from seconds.
+  if (whole_seconds > (INT64_MAX / 1000000000LL)) {
+    RCUTILS_SET_ERROR_MSG("overflow in steady time for 'whole_seconds'", allocator)
+    return RCUTILS_CALCULATION_OVERFLOW;
+  }
+  // Overflow of total when adding whole seconds and remainder as nanoseconds.
+  if ((remainder_ns > 0LL) && (total_seconds_in_ns > (INT64_MAX - remainder_ns))) {
+    RCUTILS_SET_ERROR_MSG("overflow in steady time during addition", allocator)
+    return RCUTILS_CALCULATION_OVERFLOW;
+  }
+
+  // Check for monotonicity...
+  rcutils_ret_t ret = __rcutils_check_steady_time_monotonicity_thread_local(total_ns);
+  if (RCUTILS_RET_OK != ret) {
+    // error is already set
+    return ret;
+  }
+#endif  // !defined(RCUTILS_DISABLE_TIME_SANITY_CHECKS) || !RCUTILS_DISABLE_TIME_SANITY_CHECKS
+
+  *now = total_ns;
+  return RCUTILS_RET_OK;
 }
 
 #if __cplusplus

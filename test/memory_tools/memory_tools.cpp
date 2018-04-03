@@ -27,7 +27,7 @@ void *
 malloc(size_t size)
 {
   void * (* libc_malloc)(size_t) = (void *(*)(size_t))dlsym(RTLD_NEXT, "malloc");
-  if (enabled.load()) {
+  if (g_monitoring_enabled.load()) {
     return custom_malloc(size);
   }
   return libc_malloc(size);
@@ -37,7 +37,7 @@ void *
 realloc(void * pointer, size_t size)
 {
   void * (* libc_realloc)(void *, size_t) = (void *(*)(void *, size_t))dlsym(RTLD_NEXT, "realloc");
-  if (enabled.load()) {
+  if (g_monitoring_enabled.load()) {
     return custom_realloc(pointer, size);
   }
   return libc_realloc(pointer, size);
@@ -47,23 +47,23 @@ void
 free(void * pointer)
 {
   void (* libc_free)(void *) = (void (*)(void *))dlsym(RTLD_NEXT, "free");
-  if (enabled.load()) {
+  if (g_monitoring_enabled.load()) {
     return custom_free(pointer);
   }
   return libc_free(pointer);
 }
 
-void start_memory_checking()
+void start_memory_monitoring()
 {
-  if (!enabled.exchange(true)) {
-    printf("starting memory checking...\n");
+  if (!g_monitoring_enabled.exchange(true)) {
+    printf("starting memory monitoring...\n");
   }
 }
 
-void stop_memory_checking()
+void stop_memory_monitoring()
 {
-  if (enabled.exchange(false)) {
-    printf("stopping memory checking...\n");
+  if (g_monitoring_enabled.exchange(false)) {
+    printf("stopping memory monitoring...\n");
   }
 }
 
@@ -78,17 +78,17 @@ void stop_memory_checking()
 // The apple implementation is in a separate shared library, loaded with DYLD_INSERT_LIBRARIES.
 // Therefore we do not include the common cpp file here.
 
-void osx_start_memory_checking();
-void osx_stop_memory_checking();
+void osx_start_memory_monitoring();
+void osx_stop_memory_monitoring();
 
-void start_memory_checking()
+void start_memory_monitoring()
 {
-  return osx_start_memory_checking();
+  return osx_start_memory_monitoring();
 }
 
-void stop_memory_checking()
+void stop_memory_monitoring()
 {
-  return osx_stop_memory_checking();
+  return osx_stop_memory_monitoring();
 }
 
 /******************************************************************************
@@ -111,13 +111,13 @@ void stop_memory_checking()
 
 #include <stdio.h>
 
-void start_memory_checking()
+void start_memory_monitoring()
 {
-  printf("starting memory checking... not available\n");
+  printf("starting memory monitoring... not available\n");
 }
-void stop_memory_checking()
+void stop_memory_monitoring()
 {
-  printf("stopping memory checking... not available\n");
+  printf("stopping memory monitoring... not available\n");
 }
 
 void assert_no_malloc_begin() {}

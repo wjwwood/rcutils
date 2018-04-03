@@ -22,6 +22,7 @@
 #include "rcutils/error_handling.h"
 #include "rcutils/time.h"
 
+#include "../src/time_common.h"
 #include "./memory_tools/memory_tools.hpp"
 
 class TestTimeFixture : public ::testing::Test
@@ -87,6 +88,9 @@ TEST_F(TestTimeFixture, test_rcutils_steady_time_now) {
   ret = rcutils_steady_time_now(nullptr);
   EXPECT_EQ(ret, RCUTILS_RET_INVALID_ARGUMENT) << rcutils_get_error_string_safe();
   rcutils_reset_error();
+  ret = rcutils_steady_time_now_thread_specific_init(rcutils_get_default_allocator());
+  EXPECT_EQ(RCUTILS_RET_OK, ret) << rcutils_get_error_string_safe();
+  rcutils_reset_error();
   assert_no_malloc_begin();
   assert_no_free_begin();
   // Check for normal operation (not allowed to alloc).
@@ -116,4 +120,22 @@ TEST_F(TestTimeFixture, test_rcutils_steady_time_now) {
   const int k_tolerance_ms = 1;
   EXPECT_LE(
     llabs(steady_diff - sc_diff), RCUTILS_MS_TO_NS(k_tolerance_ms)) << "steady_clock differs";
+}
+
+// Tests the __rcutils_check_steady_time_monotonicity_thread_local() function.
+TEST_F(TestTimeFixture, test___rcutils_check_steady_time_monotonicity_thread_local) {
+  rcutils_time_point_value_t t = 0;
+  rcutils_ret_t ret = rcutils_steady_time_now(&t);
+  EXPECT_EQ(ret, RCUTILS_RET_OK) << rcutils_get_error_string_safe();
+
+  ret = __rcutils_check_steady_time_monotonicity_thread_local(t++);
+  EXPECT_EQ(RCUTILS_RET_OK, ret);
+  // The first call is allowed to allocate memory
+  assert_no_realloc_begin();
+  assert_no_malloc_begin();
+  assert_no_free_begin();
+  ret = __rcutils_check_steady_time_monotonicity_thread_local(t++);
+  EXPECT_EQ(RCUTILS_RET_OK, ret);
+  ret = __rcutils_check_steady_time_monotonicity_thread_local(t--);
+  EXPECT_EQ(RCUTILS_RET_OK, ret);
 }

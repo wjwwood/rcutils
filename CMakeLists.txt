@@ -44,6 +44,7 @@ set(rcutils_sources
   src/strdup.c
   src/string_array.c
   src/string_map.c
+  src/time_common.c
   ${time_impl_c}
 )
 set_source_files_properties(
@@ -279,6 +280,42 @@ if(BUILD_TESTING)
     APPEND_LIBRARY_DIRS ${extra_lib_dirs})
   if(TARGET test_time)
     target_link_libraries(test_time ${PROJECT_NAME} ${extra_test_libraries})
+  endif()
+
+  rcutils_custom_add_gtest(test_time_common
+    test/test_time_common.cpp
+    # manually re-compile in required sources
+    src/allocator.c
+    src/error_handling.c
+    src/strdup.c
+    src/time_common.c
+    ENV ${extra_test_env}
+    APPEND_LIBRARY_DIRS ${extra_lib_dirs})
+  if(TARGET test_time_common)
+    target_link_libraries(test_time_common ${extra_test_libraries})
+  endif()
+
+  set(CMAKE_THREAD_PREFER_PTHREAD ON)
+  find_package(THREADS)
+  if (CMAKE_USE_PTHREADS_INIT)
+    message(STATUS "pthread detected, building pthread specific time_common test")
+    rcutils_custom_add_gtest(test_time_common_pthreads
+      test/test_time_common.cpp
+      # manually re-compile in required sources
+      src/allocator.c
+      src/error_handling.c
+      src/strdup.c
+      src/time_common.c
+      ENV ${extra_test_env}
+      APPEND_LIBRARY_DIRS ${extra_lib_dirs})
+    if(TARGET test_time_common_pthreads)
+      # Force use of pthread
+      target_compile_definitions(test_time_common_pthreads PUBLIC RCUTILS_THREAD_LOCAL_PTHREAD=1)
+      target_link_libraries(test_time_common_pthreads
+        ${extra_test_libraries} ${CMAKE_THREAD_LIBS_INIT})
+    endif()
+  else()
+    message(STATUS "pthread not detected, not building pthread specific time_common test")
   endif()
 endif()
 

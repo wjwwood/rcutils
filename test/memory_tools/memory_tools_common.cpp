@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <cstdlib>
+#include <csignal>
 
 #if defined(__APPLE__)
 #include <malloc/malloc.h>
@@ -26,134 +27,130 @@
 
 #include "./memory_tools.hpp"
 #include "./scope_exit.hpp"
+#include "./stacktrace.h"
 
-static std::atomic<bool> enabled(false);
+namespace memory_tools
+{
+
+// Global storage and thread-local storage.
+
+/// Global state for whether or not memory operations should be monitored.
+static std::atomic<bool> g_monitoring_enabled(false);
+/// Thread-local state for whether or not memory operations should be ignored.
+/** Specifically as part of memory monitoring activity. */
+static __thread bool tls_in_memory_tools_function = false;
+
+/// Thread-local state to indicate if a malloc() was expected or not.
+/** Used by assert_no_malloc_{begin,end}(). */
+static __thread bool tls_malloc_expected = true;
+/// Global storage for on_malloc() callbacks.
+static AnyMemoryToolsCallback g_on_malloc_callback = nullptr;
+/// Thread-local storage for on_malloc_thread_local() callbacks.
+static __thread MemoryToolsCallback * tls_on_malloc_callback = nullptr;
+
 
 static __thread bool malloc_expected = true;
 static __thread UnexpectedCallbackType * unexpected_malloc_callback = nullptr;
-void set_on_unexpected_malloc_callback(UnexpectedCallbackType callback)
+static __thread UnexpectedCallbackType2 * unexpected_malloc_callback2 = nullptr;
+static __thread bool realloc_expected = true;
+static __thread UnexpectedCallbackType * unexpected_realloc_callback = nullptr;
+static __thread UnexpectedCallbackType2 * unexpected_realloc_callback2 = nullptr;
+static __thread bool free_expected = true;
+static __thread UnexpectedCallbackType * unexpected_free_callback = nullptr;
+static __thread UnexpectedCallbackType2 * unexpected_free_callback2 = nullptr;
+
+void
+memory_checking_thread_init()
 {
-  if (unexpected_malloc_callback) {
-    unexpected_malloc_callback->~UnexpectedCallbackType();
-    free(unexpected_malloc_callback);
-    unexpected_malloc_callback = nullptr;
-  }
-  if (!callback) {
-    return;
-  }
-  if (!unexpected_malloc_callback) {
-    unexpected_malloc_callback =
-      reinterpret_cast<UnexpectedCallbackType *>(malloc(sizeof(UnexpectedCallbackType)));
-    if (!unexpected_malloc_callback) {
-      throw std::bad_alloc();
-    }
-    new (unexpected_malloc_callback) UnexpectedCallbackType();
-  }
-  *unexpected_malloc_callback = callback;
+  // explicitly access all thread-local storage to make sure allocations have been made
+
 }
+
+// start_memory_monitoring() and stop_memory_monitoring() are implemented in a
+// platform specific way and in a different file, e.g. memory_tools.cpp.
 
 void *
 custom_malloc(size_t size)
 {
-  if (!enabled.load()) {return malloc(size);}
-  auto foo = SCOPE_EXIT(enabled.store(true););
-  enabled.store(false);
+  if (!enabled.load() || in_custom_callback) {return malloc(size);}
+  in_custom_callback = true;
+  auto foo = SCOPE_EXIT(in_custom_callback = false);
+  bool should_print_stacktrace = false;
   if (!malloc_expected) {
     if (unexpected_malloc_callback) {
+      printf("here\n");
       (*unexpected_malloc_callback)();
     }
+    if (unexpected_malloc_callback2) {
+      printf("here2\n");
+      // if the malloc callback returns true, print stacktrace
+      should_print_stacktrace = (*unexpected_malloc_callback2)();
+    }
+  } else {
+    printf("there\n");
   }
   void * memory = malloc(size);
-  uint64_t fw_size = size;
   if (!malloc_expected) {
+    uint64_t fw_size = size;
     MALLOC_PRINTF(
       " malloc (%s) %p %" PRIu64 "\n",
       malloc_expected ? "    expected" : "not expected", memory, fw_size);
+    if (should_print_stacktrace) {
+      print_stacktrace();
+    }
   }
   return memory;
-}
-
-static __thread bool realloc_expected = true;
-static __thread UnexpectedCallbackType * unexpected_realloc_callback = nullptr;
-void set_on_unexpected_realloc_callback(UnexpectedCallbackType callback)
-{
-  if (unexpected_realloc_callback) {
-    unexpected_realloc_callback->~UnexpectedCallbackType();
-    free(unexpected_realloc_callback);
-    unexpected_realloc_callback = nullptr;
-  }
-  if (!callback) {
-    return;
-  }
-  if (!unexpected_realloc_callback) {
-    unexpected_realloc_callback =
-      reinterpret_cast<UnexpectedCallbackType *>(malloc(sizeof(UnexpectedCallbackType)));
-    if (!unexpected_realloc_callback) {
-      throw std::bad_alloc();
-    }
-    new (unexpected_realloc_callback) UnexpectedCallbackType();
-  }
-  *unexpected_realloc_callback = callback;
 }
 
 void *
 custom_realloc(void * memory_in, size_t size)
 {
-  if (!enabled.load()) {return realloc(memory_in, size);}
-  auto foo = SCOPE_EXIT(enabled.store(true););
-  enabled.store(false);
+  if (!enabled.load() || in_custom_callback) {return realloc(memory_in, size);}
+  in_custom_callback = true;
+  auto foo = SCOPE_EXIT(in_custom_callback = false);
+  bool should_print_stacktrace = false;
   if (!realloc_expected) {
     if (unexpected_realloc_callback) {
       (*unexpected_realloc_callback)();
     }
+    if (unexpected_realloc_callback) {
+      should_print_stacktrace = (*unexpected_realloc_callback2)();
+    }
   }
   void * memory = realloc(memory_in, size);
-  uint64_t fw_size = size;
   if (!realloc_expected) {
+    uint64_t fw_size = size;
     MALLOC_PRINTF(
       "realloc (%s) %p %p %" PRIu64 "\n",
       realloc_expected ? "    expected" : "not expected", memory_in, memory, fw_size);
+    if (should_print_stacktrace) {
+      print_stacktrace();
+    }
   }
   return memory;
-}
-
-static __thread bool free_expected = true;
-static __thread UnexpectedCallbackType * unexpected_free_callback = nullptr;
-void set_on_unexpected_free_callback(UnexpectedCallbackType callback)
-{
-  if (unexpected_free_callback) {
-    unexpected_free_callback->~UnexpectedCallbackType();
-    free(unexpected_free_callback);
-    unexpected_free_callback = nullptr;
-  }
-  if (!callback) {
-    return;
-  }
-  if (!unexpected_free_callback) {
-    unexpected_free_callback =
-      reinterpret_cast<UnexpectedCallbackType *>(malloc(sizeof(UnexpectedCallbackType)));
-    if (!unexpected_free_callback) {
-      throw std::bad_alloc();
-    }
-    new (unexpected_free_callback) UnexpectedCallbackType();
-  }
-  *unexpected_free_callback = callback;
 }
 
 void
 custom_free(void * memory)
 {
-  if (!enabled.load()) {return free(memory);}
-  auto foo = SCOPE_EXIT(enabled.store(true););
-  enabled.store(false);
+  if (!enabled.load() || in_custom_callback) {return free(memory);}
+  in_custom_callback = true;
+  auto foo = SCOPE_EXIT(in_custom_callback = false);
+  bool should_print_stacktrace = false;
   if (!free_expected) {
     if (unexpected_free_callback) {
       (*unexpected_free_callback)();
+    }
+    if (unexpected_free_callback2) {
+      should_print_stacktrace = (*unexpected_free_callback2)();
     }
   }
   if (!free_expected) {
     MALLOC_PRINTF(
       "   free (%s) %p\n", free_expected ? "    expected" : "not expected", memory);
+    if (should_print_stacktrace) {
+      print_stacktrace();
+    }
   }
   free(memory);
 }
@@ -164,3 +161,5 @@ void assert_no_realloc_begin() {realloc_expected = false;}
 void assert_no_realloc_end() {realloc_expected = true;}
 void assert_no_free_begin() {free_expected = false;}
 void assert_no_free_end() {free_expected = true;}
+
+}  // namespace memory_tools

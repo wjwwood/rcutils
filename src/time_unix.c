@@ -31,7 +31,7 @@ extern "C"
 #include <time.h>
 #include <unistd.h>
 
-#include "./common.h"
+#include "./time_common.h"
 #include "rcutils/allocator.h"
 #include "rcutils/error_handling.h"
 
@@ -71,10 +71,15 @@ rcutils_system_time_now(rcutils_time_point_value_t * now)
 
   rcutils_time_point_value_t total_seconds_in_ns =
     RCUTILS_S_TO_NS(timespec_now.tv_sec);
-  bool overflow_happened = timespec_now.tv_sec > (INT64_MAX / 1000000000LL);
 
   rcutils_time_point_value_t total_ns =
     total_seconds_in_ns + timespec_now.tv_nsec;
+
+#if RCUTILS_DISABLE_TIME_SANITY_CHECKS
+  *now = total_ns;
+  return RCUTILS_RET_OK;
+#else
+  bool overflow_happened = timespec_now.tv_sec > (INT64_MAX / 1000000000LL);
   overflow_happened = overflow_happened ||
     ((timespec_now.tv_nsec > 0LL) &&
     (total_seconds_in_ns > (INT64_MAX - timespec_now.tv_nsec)));
@@ -88,9 +93,8 @@ rcutils_system_time_now(rcutils_time_point_value_t * now)
     retval = RCUTILS_RET_OK;
   }
   return retval;
+#endif  // RCUTILS_DISABLE_TIME_SANITY_CHECKS
 }
-
-static _Thread_local rcutils_time_point_value_t last_steady_sample = INT64_MIN;
 
 rcutils_ret_t
 rcutils_steady_time_now(rcutils_time_point_value_t * now)
@@ -123,29 +127,30 @@ rcutils_steady_time_now(rcutils_time_point_value_t * now)
 
   rcutils_time_point_value_t total_seconds_in_ns =
     RCUTILS_S_TO_NS(timespec_now.tv_sec);
-  bool overflow_happened = timespec_now.tv_sec > (INT64_MAX / 1000000000LL);
 
   rcutils_time_point_value_t total_ns =
     total_seconds_in_ns + timespec_now.tv_nsec;
+
+#if !defined(RCUTILS_DISABLE_TIME_SANITY_CHECKS) || !RCUTILS_DISABLE_TIME_SANITY_CHECKS
+  // Check for overflow.
+  bool overflow_happened = timespec_now.tv_sec > (INT64_MAX / 1000000000LL);
   overflow_happened = overflow_happened ||
     ((timespec_now.tv_nsec > 0LL) &&
     (total_seconds_in_ns > (INT64_MAX - timespec_now.tv_nsec)));
-
-  bool non_monotonic = last_steady_sample > total_ns;
-  last_steady_sample = total_ns;
-
-  rcutils_ret_t retval;
   if (overflow_happened) {
     RCUTILS_SET_ERROR_MSG("steady time overflow", rcutils_get_default_allocator());
-    retval = RCUTILS_RET_ERROR;
-  } else if (non_monotonic) {
-    RCUTILS_SET_ERROR_MSG("non-monotonic steady time", rcutils_get_default_allocator());
-    retval = RCUTILS_RET_ERROR;
-  } else {
-    *now = total_ns;
-    retval = RCUTILS_RET_OK;
+    return RCUTILS_CALCULATION_OVERFLOW;
   }
-  return retval;
+
+  rcutils_ret_t ret = __rcutils_check_steady_time_monotonicity_thread_local(total_ns);
+  if (RCUTILS_RET_OK != ret) {
+    // error is already set
+    return ret;
+  }
+#endif  // !defined(RCUTILS_DISABLE_TIME_SANITY_CHECKS) || !RCUTILS_DISABLE_TIME_SANITY_CHECKS
+
+  *now = total_ns;
+  return RCUTILS_RET_OK;
 }
 
 #if __cplusplus

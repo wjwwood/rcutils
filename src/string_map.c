@@ -23,7 +23,7 @@ extern "C"
 #include <stddef.h>
 #include <string.h>
 
-#include "./common.h"
+#include "rcutils/error_handling.h"
 #include "rcutils/strdup.h"
 #include "rcutils/format_string.h"
 #include "rcutils/types/rcutils_ret.h"

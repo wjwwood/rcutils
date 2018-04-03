@@ -22,8 +22,6 @@ extern "C"
 #include <stddef.h>
 #include <string.h>
 
-#include "./common.h"
-
 char *
 rcutils_strdup(const char * str, rcutils_allocator_t allocator)
 {

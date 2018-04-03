@@ -42,6 +42,15 @@ typedef int rcutils_ret_t;
 /// Internal severity map for logger thresholds is invalid.
 #define RCUTILS_RET_LOGGING_SEVERITY_MAP_INVALID 40
 
+/// Calculation resulted in overflow which invalidates results (typically in time calculations)
+#define RCUTILS_CALCULATION_OVERFLOW 50
+/// Monotonic time constraint violated.
+/**
+ * This can occur when our steady time function detects that the system
+ * monotonic clock source returns non-monotonic timestamps.
+ */
+#define RCUTILS_NON_MONOTONIC_STEADY_TIME 51
+
 #if __cplusplus
 }
 #endif

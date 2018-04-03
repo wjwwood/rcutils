@@ -82,23 +82,115 @@ rcutils_system_time_now(rcutils_time_point_value_t * now);
  * The now argument must point to an allocated rcutils_time_point_value_t object,
  * as the result is copied into this variable.
  *
+ * This function uses thread-local storage to check for non-monotonic values
+ * being returned from the operating system.
+ * Thread-local storage implementations may allocate memory the first time this
+ * function is called on a new thread.
+ * By default it will use the allocator returned by
+ * rcutils_get_default_allocator() on the first call to initialize the
+ * thread-local storage.
+ * However, the rcutils_steady_time_now_thread_specific_init()
+ * function can be used to setup new threads to avoiding allocation in this
+ * function and as well to optionally control which allocator is used.
+ * Not all thread-local storage implementations allow for completely custom
+ * allocators to be used.
+ *
+ * Alternatively, all possibility of memory allocation can be avoided if
+ * this library is compiled with the `RCUTILS_DISABLE_TIME_SANITY_CHECKS`
+ * compiler definition set to a value which evaluates to true in the
+ * C preprocessor.
+ *
  * <hr>
  * Attribute          | Adherence
  * ------------------ | -------------
- * Allocates Memory   | No
+ * Allocates Memory   | No [1]
  * Thread-Safe        | Yes
  * Uses Atomics       | No
  * Lock-Free          | Yes
+ * <i>[1] if initialized with `rcutils_steady_time_now_thread_specific_init()`</i>
  *
  * \param[out] now a struct in which the current time is stored
  * \return `RCUTILS_RET_OK` if the current time was successfully obtained, or
  * \return `RCUTILS_RET_INVALID_ARGUMENT` if any arguments are invalid, or
+ * \return `RCUTILS_RET_BAD_ALLOC` if thread-local memory allocation fails, or
  * \return `RCUTILS_RET_ERROR` an unspecified error occur.
  */
 RCUTILS_PUBLIC
 RCUTILS_WARN_UNUSED
 rcutils_ret_t
 rcutils_steady_time_now(rcutils_time_point_value_t * now);
+
+
+/// Initialize thread local storage used by the rcutils_steady_time_now() function.
+/**
+ * Initializes thread-local storage used by rcutils_steady_time_now() to prevent
+ * rcutils_steady_time_now() from allocating memory when called in that thread.
+ * If the `RCUTILS_DISABLE_TIME_SANITY_CHECKS` compiler definition is
+ * set to true when compiling this library, then this function does nothing
+ * and will always return RCUTILS_RET_OK.
+ *
+ * If you do not care what allocator is used, pass the result of
+ * rcutils_get_default_allocator() for the allocator.
+ *
+ * Repeated calls to this function will be a no-op and return RCUTILS_RET_OK.
+ *
+ * Not all thread-local storage implementations allow for completely custom
+ * allocation, so use of the provided or default allocator is best effort.
+ *
+ * <hr>
+ * Attribute          | Adherence
+ * ------------------ | -------------
+ * Allocates Memory   | Yes
+ * Thread-Safe        | Yes
+ * Uses Atomics       | No
+ * Lock-Free          | Yes
+ *
+ * \param[in] custom_allocator an allocator to be used
+ * \return `RCUTILS_RET_OK` if successful, or
+ * \return `RCUTILS_RET_BAD_ALLOC` if memory allocation fails.
+ */
+RCUTILS_PUBLIC
+RCUTILS_WARN_UNUSED
+rcutils_ret_t
+rcutils_steady_time_now_thread_specific_init(rcutils_allocator_t custom_allocator);
+
+/// Finalize thread local storage used by the rcutils_steady_time_now() function.
+/**
+ * This function cleans up thread-local storage memory allocations made by
+ * rcutils_steady_time_now_thread_specific_init().
+ *
+ * It is not necessary to call this function when terminating a thread, as all
+ * thread-local implementations will cleanup resources automatically, but it
+ * is provided so you can cleanup thread-local storage for
+ * rcutils_steady_time_now() and then call
+ * rcutils_steady_time_now_thread_specific_init() with a different allocator.
+ *
+ * Calls to this function before rcutils_steady_time_now_thread_specific_init()
+ * or rcutils_steady_time_now() are called is a no-op and return RCUTILS_RET_OK.
+ *
+ * Repeated calls to this function will be a no-op and return RCUTILS_RET_OK.
+ *
+ * Unless there is an unexpected internal state due to a bug, this function
+ * will never fail.
+ *
+ * Using this function will prevent future rcutils_steady_time_now() calls from
+ * detecting a violation of monotonic time with previous calls.
+ *
+ * <hr>
+ * Attribute          | Adherence
+ * ------------------ | -------------
+ * Allocates Memory   | Yes
+ * Thread-Safe        | Yes
+ * Uses Atomics       | No
+ * Lock-Free          | Yes
+ *
+ * \return `RCUTILS_RET_OK` if successful, or
+ * \return `RCUTILS_RET_ERROR` an unspecified error occur.
+ */
+RCUTILS_PUBLIC
+RCUTILS_WARN_UNUSED
+rcutils_ret_t
+rcutils_steady_time_now_thread_specific_fini();
 
 #if __cplusplus
 }

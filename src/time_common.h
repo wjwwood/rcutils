@@ -1,4 +1,4 @@
-// Copyright 2017 Open Source Robotics Foundation, Inc.
+// Copyright 2018 Open Source Robotics Foundation, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef COMMON_H_
-#define COMMON_H_
+#ifndef RCUTILS__TIME_COMMON_H_
+#define RCUTILS__TIME_COMMON_H_
 
 #if __cplusplus
 extern "C"
 {
 #endif
 
-#include "rcutils/error_handling.h"
+#include <stdint.h>
+
+#include "rcutils/types/rcutils_ret.h"
+
+rcutils_ret_t
+__rcutils_check_steady_time_monotonicity_thread_local(int64_t current_steady_timestamp);
 
 #if __cplusplus
 }
 #endif
 
-#endif  // COMMON_H_
+#endif  // RCUTILS__TIME_COMMON_H_
